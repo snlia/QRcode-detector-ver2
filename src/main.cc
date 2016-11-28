@@ -391,7 +391,7 @@ void markFIPdown (int x, int y) {
     int len5 = downN[x][y5] - y5;
     if (ckRatio (len1, len2, len3, len4, len5)) {
         if (ckArea (area[f[x][y]], area[f[x][y2]], area[f[x][y3]])) {
-            vector<Point> tmp;
+            vector<Point> tmp; tmp.clear ();
             candidates.push_back (tmp);
             int cnt = candidates.size () - 1;
             fillarea (x, y, cnt);
@@ -399,6 +399,7 @@ void markFIPdown (int x, int y) {
             fillarea (x, y3, cnt);
             fillarea (x, y4, cnt);
             fillarea (x, y5, cnt);
+            if (candidates[cnt].size() == 0) candidates.resize (cnt);
         }
     }
 }
@@ -427,6 +428,7 @@ void markFIPright (int x, int y) {
             fillarea (x3, y, cnt);
             fillarea (x4, y, cnt);
             fillarea (x5, y, cnt);
+            if (candidates[cnt].size() == 0) candidates.resize (cnt);
         }
     }
 }
@@ -519,7 +521,7 @@ void findHull (vector<Point> points, vector<Point> &res) {
         }
         if (flag) break;
     }
-    printf ("%d\n", res.size ());
+    //printf ("%d\n", res.size ());
 }
 
 int parameter_init (int argc, const char *argv[]) {
@@ -559,10 +561,13 @@ int main(int argc, const char *argv[]) {
         // Find FIP candidates
         MarkLine ();
 
+        printf ("Cand %d\n", candidates.size ());
         FIP.resize (candidates.size ());
         for (int i = 0; i < candidates.size (); ++i ) {
             findHull (Mat(candidates[i]), raw);
             approxPolyDP (Mat(raw), FIP[i], arcLength (Mat(raw), true) * 0.02, true);
+            for (int j = 0; j < FIP[i].size (); ++j) 
+                printc (FIP[i][j].x, FIP[i][j].y, 0);
         }
 
         imshow ("Image", frame);

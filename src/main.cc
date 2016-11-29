@@ -342,7 +342,6 @@ void findQR (Mat &qr, bool &flag) {
     flag = 0;
 }
 
-
 bool ckRatio (int len1, int len2, int len3, int len4, int len5) {
     if (abs (len1 - len2) > len1 * pickRatioL) return 0;
     if (abs (len1 * 3 - len3) > len1 * pickRatioL * 3) return 0;
@@ -538,6 +537,7 @@ int main(int argc, const char *argv[]) {
     Mat gray(frame.size(), CV_MAKETYPE(frame.depth(), 1));
     Mat marked(frame.size(), CV_MAKETYPE(frame.depth(), 1));
     Mat detected_edges(frame.size(), CV_MAKETYPE(frame.depth(), 1));
+    Mat qr;
     vector<Point> raw;
 
     capture >> frame;
@@ -561,7 +561,6 @@ int main(int argc, const char *argv[]) {
         // Find FIP candidates
         MarkLine ();
 
-        printf ("Cand %d\n", candidates.size ());
         FIP.resize (candidates.size ());
         for (int i = 0; i < candidates.size (); ++i ) {
             findHull (Mat(candidates[i]), raw);
@@ -570,9 +569,11 @@ int main(int argc, const char *argv[]) {
                 printc (FIP[i][j].x, FIP[i][j].y, 0);
         }
 
+        bool flag;
+        findQR (qr, flag);
+        if (flag) imshow ("QR", qr);
         imshow ("Image", frame);
         imshow ("Bin", bin);
-        //imshow ("Marked", marked);
 
         key = waitKey (100);
     }

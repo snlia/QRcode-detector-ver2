@@ -4,6 +4,7 @@
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 #include "swordfeng.h"
+#include <boost/program_options.hpp>
 
 #define maxn 2000
 #define sqr(x) ((x) * (x))
@@ -14,6 +15,7 @@
 
 using namespace std;
 using namespace cv;
+namespace po = boost::program_options;
 
 double pickRatioL = 0.5;
 double pickRatioA = 0.7;
@@ -524,6 +526,48 @@ void findHull (vector<Point> points, vector<Point> &res) {
 }
 
 int parameter_init (int argc, const char *argv[]) {
+    po::options_description desc("Allowed options");
+    desc.add_options()
+        ("help", "show this message.")
+        ("image", "use image detection.")
+        ("size", po::value<int>(), "set up the qr code size, default 100.")
+        ("athre", po::value<double>(), "set up the thresold of area constraint, default 0.2.")
+        ("dthre", po::value<double>(), "set up the thresold of distance constraint, default 0.005.")
+        ("lratio", po::value<double>(), "set up the ratio of line proportion constraint, default 0.5.")
+        ("aratio", po::value<double>(), "set up the ratio of area proportion constraint, default 0.5.")
+        ;
+    po::variables_map vm;
+    po::store(po::parse_command_line(argc, argv, desc), vm);
+    po::notify(vm);    
+
+    if (vm.count("help")) {
+        cout << desc << endl;
+        return EOF;
+    }
+    if (vm.count ("image")) {
+        cout << "Image detection." << endl;
+        useimage = 1;
+    }
+    if (vm.count ("size")) {
+        qrsize = vm["size"].as<int> ();
+        printf ("QRcode size is set as %d\n", qrsize);
+    }
+    if (vm.count ("athre")) {
+        areathre = vm["athre"].as<double> ();
+        printf ("area constraint thresold is set as %lf\n", areathre);
+    }
+    if (vm.count ("dthre")) {
+        distthre = vm["dthre"].as<double> ();
+        printf ("distance constraint thresold is set as %lf\n", distthre);
+    }
+    if (vm.count ("lratio")) {
+        pickRatioL = vm["lratio"].as<double> ();
+        printf ("line proportion constraint thresold is set as %lf\n", pickRatioL);
+    }
+    if (vm.count ("aratio")) {
+        pickRatioA = vm["aratio"].as<double> ();
+        printf ("area proportion constraint thresold is set as %lf\n", pickRatioA);
+    }
     return 0;
 }
 

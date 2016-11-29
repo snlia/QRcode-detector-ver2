@@ -20,9 +20,8 @@ namespace po = boost::program_options;
 double pickRatioL = 0.5;
 double pickRatioA = 0.7;
 bool useimage = 0;
-int hierarchythre = 4;
 int qrsize = 100;
-double areathre = 0.005;
+double areathre = 0.05;
 double distthre = 0.2;
 
 const Point go [8] = {Point(0, 1), Point(1, 0), Point(0, -1), Point(-1, 0),
@@ -121,6 +120,7 @@ bool area_constraint (double areaA, double areaB, double areaC) {
     double areaMean = (areaA + areaB + areaC) / 3;
     double sigma = sqr (areaA - areaMean) + sqr (areaB - areaMean) + sqr (areaC - areaMean);
     sigma /= 3 * sqr (areaMean);
+    printf ("%.4lf\n", sigma);
     return sigma > areathre;
 }
 
@@ -306,15 +306,21 @@ void findQR (Mat &qr, bool &flag) {
     for (int A = 0; A < size; ++A) 
         for (int B = A + 1; B < size; ++B)
             for (int C = B + 1; C < size; ++C) {
+                if (FIP[A].size () != 4 || FIP[B].size () != 4 || FIP[C].size () != 4) continue;
                 double AB = dist (mean[A],mean[B]);
                 double BC = dist (mean[B],mean[C]);
                 double CA = dist (mean[C],mean[A]);
-                if (dist_constraint (AB, BC, CA)) continue;
+                if (dist_constraint (AB, BC, CA)) {
+                    puts ("dist");
+                    continue;
+                }
                 if (area_constraint (contourArea (FIP[A]), 
                             contourArea (FIP[B]), 
                             contourArea (FIP[C]))
-                   ) 
+                   ) {
+                    puts ("area");
                     continue;
+                }
                 vector<int> tmp = getPoint (AB, BC, CA, A, B, C);
                 int top = tmp[0]; int left = tmp[1]; int right = tmp[2];
                 // Use cross product to determine left and right
@@ -337,6 +343,10 @@ void findQR (Mat &qr, bool &flag) {
                 Mat M = getPerspectiveTransform (pts1,pts2);
                 warpPerspective (rawFrame, raw, M, Size (qr.cols,qr.rows));
                 copyMakeBorder (raw, qr, 10, 10, 10, 10, BORDER_CONSTANT, Scalar(255,255,255));
+
+                polylines (frame, FIP[top], true, Scalar (255, 0, 0), 2, 8, 0);
+                polylines (frame, FIP[left], true, Scalar (0, 255, 0), 2, 8, 0);
+                polylines (frame, FIP[right], true, Scalar (0, 0, 255), 2, 8, 0);
 
                 flag = 1;
                 return ;
@@ -576,7 +586,6 @@ int main(int argc, const char *argv[]) {
     // Set up parameters
     if (parameter_init (argc, argv)) return 0;
 
-    VideoCapture capture(0);
 
     Mat gray(frame.size(), CV_MAKETYPE(frame.depth(), 1));
     Mat marked(frame.size(), CV_MAKETYPE(frame.depth(), 1));
@@ -584,42 +593,88 @@ int main(int argc, const char *argv[]) {
     Mat qr;
     vector<Point> raw;
 
-    capture >> frame;
-//    frame = imread ("../data/4.jpg");
+    if (useimage) {
+        cout << "Plz input the filename:" << endl;
+        string filename;
+        cin >> filename;
+        for (; filename != "q"; cin >> filename) {
+            cout << filename << endl;
+            frame = imread ("../data/" + filename);
+            candidates.clear (); FIP.clear ();
+            memset (v, 0, sizeof (v));
+            memset (vhull, 0, sizeof (vhull));
 
-    cout << "Press any key to return." << endl;
+            frame.copyTo (rawFrame);
+            // Change to grayscale
+            cvtColor (rawFrame, gray, CV_RGB2GRAY);
 
-    for (int key = -1; !~key; capture >> frame) {
-        candidates.clear (); FIP.clear ();
-        memset (v, 0, sizeof (v));
-        memset (vhull, 0, sizeof (vhull));
+            // Use otsu to do binaryzation
+            threshold (gray, bin, 0, 255, CV_THRESH_BINARY | CV_THRESH_OTSU);
 
-        frame.copyTo (rawFrame);
-        // Change to grayscale
-        cvtColor (rawFrame, gray, CV_RGB2GRAY);
-        threshold (gray, bin, 0, 255, CV_THRESH_BINARY | CV_THRESH_OTSU);
+            // Find all continuous blocks
+            floodfill ();
 
-        // Find all continuous blocks
-        floodfill ();
+            // Find FIP candidates
+            MarkLine ();
 
-        // Find FIP candidates
-        MarkLine ();
+            FIP.resize (candidates.size ());
+            for (int i = 0; i < candidates.size (); ++i ) {
+                findHull (Mat(candidates[i]), raw);
+                approxPolyDP (Mat(raw), FIP[i], arcLength (Mat(raw), true) * 0.02, true);
+//                for (int j = 0; j < FIP[i].size (); ++j) 
+//                    printc (FIP[i][j].x, FIP[i][j].y, 0);
+            }
 
-        FIP.resize (candidates.size ());
-        for (int i = 0; i < candidates.size (); ++i ) {
-            findHull (Mat(candidates[i]), raw);
-            approxPolyDP (Mat(raw), FIP[i], arcLength (Mat(raw), true) * 0.02, true);
-            for (int j = 0; j < FIP[i].size (); ++j) 
-                printc (FIP[i][j].x, FIP[i][j].y, 0);
+            bool flag;
+            findQR (qr, flag);
+            if (flag) imshow ("QR", qr);
+            imshow ("Image", frame);
+            imshow ("Bin", bin);
+
+            cout << "Press any key to continue." << endl;
+            pause;
+            cout << "Plz input the filename:" << endl;
         }
 
-        bool flag;
-        findQR (qr, flag);
-        if (flag) imshow ("QR", qr);
-        imshow ("Image", frame);
-        imshow ("Bin", bin);
+    }
+    else {
+        VideoCapture capture(0);
+        capture >> frame;
 
-        key = waitKey (100);
+        cout << "Press any key to return." << endl;
+
+        for (int key = -1; !~key; capture >> frame) {
+            candidates.clear (); FIP.clear ();
+            memset (v, 0, sizeof (v));
+            memset (vhull, 0, sizeof (vhull));
+
+            frame.copyTo (rawFrame);
+            // Change to grayscale
+            cvtColor (rawFrame, gray, CV_RGB2GRAY);
+            threshold (gray, bin, 0, 255, CV_THRESH_BINARY | CV_THRESH_OTSU);
+
+            // Find all continuous blocks
+            floodfill ();
+
+            // Find FIP candidates
+            MarkLine ();
+
+            FIP.resize (candidates.size ());
+            for (int i = 0; i < candidates.size (); ++i ) {
+                findHull (Mat(candidates[i]), raw);
+                approxPolyDP (Mat(raw), FIP[i], arcLength (Mat(raw), true) * 0.02, true);
+//                for (int j = 0; j < FIP[i].size (); ++j) 
+//                    printc (FIP[i][j].x, FIP[i][j].y, 0);
+            }
+
+            bool flag;
+            findQR (qr, flag);
+            if (flag) imshow ("QR", qr);
+            imshow ("Image", frame);
+            imshow ("Bin", bin);
+
+            key = waitKey (100);
+        }
     }
 
     return 0;

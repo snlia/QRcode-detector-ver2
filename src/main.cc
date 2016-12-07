@@ -23,8 +23,8 @@ bool useimage = 0;
 bool useblur = 0;
 bool useequalize = 0;
 int qrsize = 100;
-double firstPer = 0.8
-double secondPer = 0.7
+double firstPer = 0.8;
+double secondPer = 0.7;
 double areathre = 0.3;
 double distthre = 0.2;
 
@@ -324,6 +324,9 @@ void findQR (Mat &qr, bool &flag) {
                     continue;
                 vector<int> tmp = getPoint (AB, BC, CA, A, B, C);
                 int top = tmp[0]; int left = tmp[1]; int right = tmp[2];
+                polylines (rawFrame, FIP[top], true, Scalar (255, 0, 0), 2, 8, 0);
+                polylines (rawFrame, FIP[left], true, Scalar (0, 255, 0), 2, 8, 0);
+                polylines (rawFrame, FIP[right], true, Scalar (0, 0, 255), 2, 8, 0);
                 // Use cross product to determine left and right
                 if (crossProduct (mean[left], mean[top], mean[right]) < 0) 
                     swap (left, right);
@@ -602,8 +605,7 @@ int parameter_init (int argc, const char *argv[]) {
     return 0;
 }
 
-void convertImageRGBtoYIQ(const Mat &imageRGB, Mat &imageYIQ)
-{
+void convertImageRGBtoYIQ(const Mat &imageRGB, Mat &imageYIQ) {
 	double fR, fG, fB;
 	double fY, fI, fQ;
 	const double FLOAT_TO_BYTE = 255.0f;

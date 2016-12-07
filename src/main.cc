@@ -20,14 +20,18 @@ namespace po = boost::program_options;
 double pickRatioL = 0.5;
 double pickRatioA = 0.7;
 bool useimage = 0;
+bool useblur = 0;
+bool useequalize = 0;
 int qrsize = 100;
-double areathre = 0.05;
+double firstPer = 0.8
+double secondPer = 0.7
+double areathre = 0.3;
 double distthre = 0.2;
 
 const Point go [8] = {Point(0, 1), Point(1, 0), Point(0, -1), Point(-1, 0),
 Point(1, 1), Point(1, -1), Point(-1, 1), Point(-1, -1)};
 
-Mat frame, rawFrame, bin;
+Mat frame, rawFrame, bin, deb;
 int upN [maxn][maxn], rightN [maxn][maxn], downN [maxn][maxn], leftN [maxn][maxn];
 deque<Point> q;
 bool v [maxn][maxn], vhull [maxn][maxn];
@@ -207,7 +211,7 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
         //    threshold (gray, bin, 180, 255, CV_THRESH_BINARY);
         LocalThBinarization (gray, bin);
         int flag = 0;
-        for (int i = int (qrsize * 0.9); i < qrsize; ++i) {
+        for (int i = int (qrsize * firstPer); i < qrsize; ++i) {
             flag += bin.at<uchar>(qrsize - 1, i) == 0;
             flag += bin.at<uchar>(i, qrsize - 1) == 0;
         }
@@ -241,6 +245,7 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
     LocalPreWorkGray (gray);
     //    threshold (gray, bin, 180, 255, CV_THRESH_BINARY);
     LocalThBinarization (gray, bin);
+    bin.copyTo (deb);
 
     //imshow ("bin", bin);
     //pause;
@@ -250,8 +255,8 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
     K1.push_back (Point2f(qrsize - 1, qrsize - 1));
     K2.push_back (Point2f(qrsize - 1, qrsize - 1));
     double minK1 = INF, minK2 = INF;
-    for (int i = qrsize - 1; i > int (0.7 * qrsize); --i) 
-        for (int j = qrsize - 1; j > int (0.7 * qrsize); --j)
+    for (int i = qrsize - 1; i > int (secondPer * qrsize); --i) 
+        for (int j = qrsize - 1; j > int (secondPer * qrsize); --j)
             if (bin.at<uchar>(j, i) == 0) {
                 // Update K1
                 if (minK1 > (qrsize - i + 0.0) / j) {
@@ -310,17 +315,13 @@ void findQR (Mat &qr, bool &flag) {
                 double AB = dist (mean[A],mean[B]);
                 double BC = dist (mean[B],mean[C]);
                 double CA = dist (mean[C],mean[A]);
-                if (dist_constraint (AB, BC, CA)) {
-                    puts ("dist");
+                if (dist_constraint (AB, BC, CA)) 
                     continue;
-                }
                 if (area_constraint (contourArea (FIP[A]), 
                             contourArea (FIP[B]), 
                             contourArea (FIP[C]))
-                   ) {
-                    puts ("area");
+                   )
                     continue;
-                }
                 vector<int> tmp = getPoint (AB, BC, CA, A, B, C);
                 int top = tmp[0]; int left = tmp[1]; int right = tmp[2];
                 // Use cross product to determine left and right
@@ -540,8 +541,12 @@ int parameter_init (int argc, const char *argv[]) {
     desc.add_options()
         ("help", "show this message.")
         ("image", "use image detection.")
+        ("blur", "use blur")
+        ("equalize", "use histogram equalization")
         ("size", po::value<int>(), "set up the qr code size, default 100.")
-        ("athre", po::value<double>(), "set up the thresold of area constraint, default 0.2.")
+        ("firper", po::value<double>(), "set up the first perspective transform searching area, default 0.8.")
+        ("secper", po::value<double>(), "set up the second perspective transform searching area, default 0.7.")
+        ("athre", po::value<double>(), "set up the thresold of area constraint, default 0.3.")
         ("dthre", po::value<double>(), "set up the thresold of distance constraint, default 0.005.")
         ("lratio", po::value<double>(), "set up the ratio of line proportion constraint, default 0.5.")
         ("aratio", po::value<double>(), "set up the ratio of area proportion constraint, default 0.5.")
@@ -558,9 +563,25 @@ int parameter_init (int argc, const char *argv[]) {
         cout << "Image detection." << endl;
         useimage = 1;
     }
+    if (vm.count ("blur")) {
+        cout << "Use blur." << endl;
+        useblur = 1;
+    }
+    if (vm.count ("equalize")) {
+        cout << "Use histogram equalization." << endl;
+        useequalize = 1;
+    }
     if (vm.count ("size")) {
         qrsize = vm["size"].as<int> ();
         printf ("QRcode size is set as %d\n", qrsize);
+    }
+    if (vm.count ("firper")) {
+        firstPer = vm["firper"].as<double> ();
+        printf ("first perspective transform searching area is set as %lf\n", firstPer);
+    }
+    if (vm.count ("secper")) {
+        secondPer = vm["secper"].as<double> ();
+        printf ("second perspective transform searching area is set as %lf\n", secondPer);
     }
     if (vm.count ("athre")) {
         areathre = vm["athre"].as<double> ();
@@ -581,13 +602,80 @@ int parameter_init (int argc, const char *argv[]) {
     return 0;
 }
 
+void convertImageRGBtoYIQ(const Mat &imageRGB, Mat &imageYIQ)
+{
+	double fR, fG, fB;
+	double fY, fI, fQ;
+	const double FLOAT_TO_BYTE = 255.0f;
+	const double BYTE_TO_FLOAT = 1.0f / FLOAT_TO_BYTE;
+	const double MIN_I = -0.5957f;
+	const double MIN_Q = -0.5226f;
+	const double Y_TO_BYTE = 255.0f;
+	const double I_TO_BYTE = 255.0f / (MIN_I * -2.0f);
+	const double Q_TO_BYTE = 255.0f / (MIN_Q * -2.0f);
+
+	// Create a blank YIQ image
+    imageYIQ = Mat::zeros (imageRGB.rows, imageRGB.cols, CV_8UC3);
+
+	int h = imageRGB.rows;			// Pixel height
+	int w = imageRGB.cols;			// Pixel width
+	for (int y = 0; y < h; ++y) {
+		for (int x = 0; x < w; ++x) {
+			// Get the RGB pixel components. NOTE that OpenCV stores RGB pixels in B,G,R order.
+			int bB = imageRGB.at<uchar> (y, x * 3);	// Blue component
+			int bG = imageRGB.at<uchar> (y, x * 3 + 1);	// Green component
+			int bR = imageRGB.at<uchar> (y, x * 3 + 2);	// Red component
+
+			// Convert from 8-bit integers to floats
+			fR = bR * BYTE_TO_FLOAT;
+			fG = bG * BYTE_TO_FLOAT;
+			fB = bB * BYTE_TO_FLOAT;
+			// Convert from RGB to YIQ,
+			// where R,G,B are 0-1, Y is 0-1, I is -0.5957 to +0.5957, Q is -0.5226 to +0.5226.
+			fY =    0.299 * fR +    0.587 * fG +    0.114 * fB;
+			fI = 0.595716 * fR - 0.274453 * fG - 0.321263 * fB;
+			fQ = 0.211456 * fR - 0.522591 * fG + 0.311135 * fB;
+			// Convert from floats to 8-bit integers
+			int bY = (int)(0.5f + fY * Y_TO_BYTE);
+			int bI = (int)(0.5f + (fI - MIN_I) * I_TO_BYTE);
+			int bQ = (int)(0.5f + (fQ - MIN_Q) * Q_TO_BYTE);
+
+			// Clip the values to make sure it fits within the 8bits.
+			if (bY > 255)
+				bY = 255;
+			if (bY < 0)
+				bY = 0;
+			if (bI > 255)
+				bI = 255;
+			if (bI < 0)
+				bI = 0;
+			if (bQ > 255)
+				bQ = 255;
+			if (bQ < 0)
+				bQ = 0;
+
+			// Set the YIQ pixel components
+			imageYIQ.at<uchar> (y, x * 3 + 0) = bY;		// Y component
+			imageYIQ.at<uchar> (y, x * 3 + 1) = bI;		// I component
+			imageYIQ.at<uchar> (y, x * 3 + 2) = bQ;		// Q component
+		}
+	}
+}
+
+void lightBalance (Mat raw, Mat &frame) {
+    Mat YIQ;
+    convertImageRGBtoYIQ (raw, YIQ);
+}
+
 int main(int argc, const char *argv[]) {
     
     // Set up parameters
     if (parameter_init (argc, argv)) return 0;
 
 
+    deb = Mat::zeros(qrsize, qrsize, CV_8UC1);
     Mat gray(frame.size(), CV_MAKETYPE(frame.depth(), 1));
+    Mat tmp(frame.size(), CV_MAKETYPE(frame.depth(), 1));
     Mat marked(frame.size(), CV_MAKETYPE(frame.depth(), 1));
     Mat detected_edges(frame.size(), CV_MAKETYPE(frame.depth(), 1));
     Mat qr;
@@ -605,8 +693,16 @@ int main(int argc, const char *argv[]) {
             memset (vhull, 0, sizeof (vhull));
 
             frame.copyTo (rawFrame);
+
+            // Light balance
+            lightBalance (rawFrame, frame);
+
             // Change to grayscale
-            cvtColor (rawFrame, gray, CV_RGB2GRAY);
+            cvtColor (frame, gray, CV_RGB2GRAY);
+            if (useblur) {
+                blur (gray, tmp, Size (3,3));
+                tmp.copyTo (gray);
+            } 
 
             // Use otsu to do binaryzation
             threshold (gray, bin, 0, 255, CV_THRESH_BINARY | CV_THRESH_OTSU);
@@ -649,8 +745,16 @@ int main(int argc, const char *argv[]) {
             memset (vhull, 0, sizeof (vhull));
 
             frame.copyTo (rawFrame);
+
+            // Light balance
+            lightBalance (rawFrame, frame);
+
             // Change to grayscale
             cvtColor (rawFrame, gray, CV_RGB2GRAY);
+            if (useblur) {
+                blur (gray, tmp, Size (3,3));
+                tmp.copyTo (gray);
+            } 
             threshold (gray, bin, 0, 255, CV_THRESH_BINARY | CV_THRESH_OTSU);
 
             // Find all continuous blocks
@@ -672,6 +776,7 @@ int main(int argc, const char *argv[]) {
             if (flag) imshow ("QR", qr);
             imshow ("Image", frame);
             imshow ("Bin", bin);
+            imshow ("Debug", deb);
 
             key = waitKey (100);
         }

@@ -18,7 +18,7 @@ using namespace cv;
 namespace po = boost::program_options;
 
 double pickRatioL = 0.5;
-double pickRatioA = 0.7;
+double pickRatioA = 0.8;
 bool useimage = 0;
 bool useblur = 0;
 bool useequalize = 0;
@@ -31,7 +31,7 @@ double distthre = 0.2;
 const Point go [8] = {Point(0, 1), Point(1, 0), Point(0, -1), Point(-1, 0),
 Point(1, 1), Point(1, -1), Point(-1, 1), Point(-1, -1)};
 
-Mat frame, rawFrame, bin, deb;
+Mat frame, rawFrame, bin, deb, tmpMat;
 int upN [maxn][maxn], rightN [maxn][maxn], downN [maxn][maxn], leftN [maxn][maxn];
 deque<Point> q;
 bool v [maxn][maxn], vhull [maxn][maxn];
@@ -191,7 +191,7 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
 
     // relocate P3
     vector<Point2f> pts1, pts2;
-    Mat M, gray, firstImg, bin;
+    Mat M, gray, firstImg, histImg, bin;
     double ratio, optRatio = 0;
     int minFlag = INF;
     for (ratio = -0.2; ratio < 0.1; ratio += 0.01) {
@@ -206,7 +206,8 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
         M = getPerspectiveTransform (pts1, pts2);
         warpPerspective (rawFrame, firstImg, M, Size (qrsize, qrsize));
         // convert to binary image
-        cvtColor (firstImg, gray,CV_RGB2GRAY);
+        cvtColor (firstImg, histImg,CV_RGB2GRAY);
+        equalizeHist (histImg, gray);
         LocalPreWorkGray (gray);
         //    threshold (gray, bin, 180, 255, CV_THRESH_BINARY);
         LocalThBinarization (gray, bin);
@@ -241,11 +242,13 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
     M = getPerspectiveTransform (pts1, pts2);
     warpPerspective (rawFrame, firstImg, M, Size (qrsize, qrsize));
     // convert to binary image
-    cvtColor (firstImg, gray,CV_RGB2GRAY);
+    cvtColor (firstImg, histImg, CV_RGB2GRAY);
+    equalizeHist (histImg, gray);
     LocalPreWorkGray (gray);
     //    threshold (gray, bin, 180, 255, CV_THRESH_BINARY);
-    LocalThBinarization (gray, bin);
+    equalizeHist (gray, deb);
     bin.copyTo (deb);
+    LocalThBinarization (gray, bin);
 
     //imshow ("bin", bin);
     //pause;
@@ -324,9 +327,6 @@ void findQR (Mat &qr, bool &flag) {
                     continue;
                 vector<int> tmp = getPoint (AB, BC, CA, A, B, C);
                 int top = tmp[0]; int left = tmp[1]; int right = tmp[2];
-                polylines (rawFrame, FIP[top], true, Scalar (255, 0, 0), 2, 8, 0);
-                polylines (rawFrame, FIP[left], true, Scalar (0, 255, 0), 2, 8, 0);
-                polylines (rawFrame, FIP[right], true, Scalar (0, 0, 255), 2, 8, 0);
                 // Use cross product to determine left and right
                 if (crossProduct (mean[left], mean[top], mean[right]) < 0) 
                     swap (left, right);
@@ -347,6 +347,8 @@ void findQR (Mat &qr, bool &flag) {
                 Mat M = getPerspectiveTransform (pts1,pts2);
                 warpPerspective (rawFrame, raw, M, Size (qr.cols,qr.rows));
                 copyMakeBorder (raw, qr, 10, 10, 10, 10, BORDER_CONSTANT, Scalar(255,255,255));
+                cvtColor (qr, tmpMat, CV_RGB2GRAY);
+                equalizeHist (tmpMat, deb);
 
                 polylines (frame, FIP[top], true, Scalar (255, 0, 0), 2, 8, 0);
                 polylines (frame, FIP[left], true, Scalar (0, 255, 0), 2, 8, 0);
@@ -676,6 +678,7 @@ int main(int argc, const char *argv[]) {
 
 
     deb = Mat::zeros(qrsize, qrsize, CV_8UC1);
+    tmpMat = Mat::zeros(qrsize, qrsize, CV_8UC1);
     Mat gray(frame.size(), CV_MAKETYPE(frame.depth(), 1));
     Mat tmp(frame.size(), CV_MAKETYPE(frame.depth(), 1));
     Mat marked(frame.size(), CV_MAKETYPE(frame.depth(), 1));
@@ -779,6 +782,7 @@ int main(int argc, const char *argv[]) {
             imshow ("Image", frame);
             imshow ("Bin", bin);
             imshow ("Debug", deb);
+            imshow ("tmpDebug", tmpMat);
 
             key = waitKey (100);
         }

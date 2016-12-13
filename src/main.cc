@@ -110,21 +110,21 @@ vector<int> getPoint (double AB, double BC, double CA, int A, int B, int C) {
     return res;
 }
 
-bool dist_constraint (double AB, double BC, double CA) {
+bool dist_constraint (double AB, double BC, double CA, double len) {
     // TODO : add more constraint
+    if (AB < 1.6 * len || AB > 27 * len) return 1;
+    if (BC < 1.6 * len || BC > 27 * len) return 1;
+    if (CA < 1.6 * len || CA > 27 * len) return 1;
     if (AB > BC && AB > CA) {
         if (abs (BC - CA) > distthre * max (BC, CA)) return 1;
-        return 0;
     }
     if (BC > AB && BC > CA) {
         if (abs (AB - CA) > distthre * max (CA, AB)) return 1;
-        return 0;
     }
     if (CA > AB && CA > BC) {
         if (abs (BC - AB) > distthre * max (BC, AB)) return 1;
-        return 0;
     }
-    return 1;
+    return 0;
 }
 
 bool area_constraint (double areaA, double areaB, double areaC) {
@@ -162,9 +162,7 @@ int findCandidates () {
 }
 
 void findRealContour (vector<Point> &res, vector<Point> &src) {
-    res = src;
-    return ;
-    Mat origin, gray, edges, deb;
+    Mat origin, gray, edges, deb, detected_edges;
     int minx, miny, maxx, maxy;
     minx = miny = INF;
     maxx = maxy = -INF;
@@ -186,7 +184,8 @@ void findRealContour (vector<Point> &res, vector<Point> &src) {
     maxy = min(rawFrame.rows, maxy);
     rawFrame(Range(miny, maxy), Range(minx, maxx)).copyTo(origin);
     cvtColor(origin, gray, CV_RGB2GRAY);
-    Canny (gray, edges, cannylow, cannyhigh, 3);		// Apply Canny edge detection on the gray image
+    blur (gray, detected_edges, Size(3,3));
+    Canny (detected_edges, edges, cannylow, cannyhigh, 3);		// Apply Canny edge detection on the gray image
     origin.copyTo (deb);
     findContours (edges, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
     int contourID = findCandidates ();
@@ -396,12 +395,12 @@ void findQR (Mat &qr, bool &flag) {
                 double AB = dist (mean[A],mean[B]);
                 double BC = dist (mean[B],mean[C]);
                 double CA = dist (mean[C],mean[A]);
-                if (dist_constraint (AB, BC, CA)) 
-                    continue;
                 if (area_constraint (contourArea (FIP[A]), 
                             contourArea (FIP[B]), 
                             contourArea (FIP[C]))
                    )
+                    continue;
+                if (dist_constraint (AB, BC, CA, sqrt (contourArea(FIP[A]) + contourArea(FIP[B]) + contourArea(FIP[C])) / 3)) 
                     continue;
                 vector<int> tmp = getPoint (AB, BC, CA, A, B, C);
                 int top = tmp[0]; int left = tmp[1]; int right = tmp[2];

@@ -27,19 +27,26 @@ double firstPer = 0.8;
 double secondPer = 0.7;
 double areathre = 0.3;
 double distthre = 0.2;
+int cannylow = 25;
+int cannyhigh = 150;
 
 const Point go [8] = {Point(0, 1), Point(1, 0), Point(0, -1), Point(-1, 0),
 Point(1, 1), Point(1, -1), Point(-1, 1), Point(-1, -1)};
 
-Mat frame, rawFrame, bin, deb, tmpMat;
+Mat frame, rawFrame, bin;
+vector<Mat> debs;
 int upN [maxn][maxn], rightN [maxn][maxn], downN [maxn][maxn], leftN [maxn][maxn];
 deque<Point> q;
+vector<vector<Point>> contours;
+vector<Vec4i> hierarchy;
 bool v [maxn][maxn], vhull [maxn][maxn];
 int f [maxn][maxn];
+int fhie [maxn];
 vector<vector<Point>> FIP;
 int Cid [maxn][maxn];
 vector<vector<Point>> candidates;
 int area [maxn * maxn];
+Scalar colors[6] = {Scalar(255, 0, 0), Scalar(0, 255, 0), Scalar(0, 0, 255), Scalar(255, 255, 0), Scalar(255, 0, 255), Scalar(0, 255, 255)};
 
 extern void LocalThBinarization (Mat qr, Mat &out);
 extern void LocalPreWorkGray (Mat &qrGray);
@@ -128,15 +135,84 @@ bool area_constraint (double areaA, double areaB, double areaC) {
     return sigma > areathre;
 }
 
+int countHierarchy (int x) {
+    // return the maxium deepth
+    if (~fhie[x]) return fhie[x];
+    int res = 0;
+    for (int sx = hierarchy[x][2]; ~sx; sx = hierarchy[sx][1]) {
+        res = max(countHierarchy (sx) + 1, res);
+    }
+    fhie[x] = res;
+    return res;
+}
+
+int findCandidates () {
+    int res = 0;
+    double maxhie = 0;
+
+    for (int i = 0; i < contours.size (); ++i) fhie[i] = -1;
+
+    for (int i = 0; i < contours.size (); ++i) 
+        if (contourArea(contours[i]) >= maxhie) {
+            res = i;
+            maxhie = contourArea(contours[i]);
+        }
+
+    return res;
+}
+
+void findRealContour (vector<Point> &res, vector<Point> &src) {
+    res = src;
+    return ;
+    Mat origin, gray, edges, deb;
+    int minx, miny, maxx, maxy;
+    minx = miny = INF;
+    maxx = maxy = -INF;
+    for (int i = 0; i < src.size(); ++i) {
+        minx = min (minx, src[i].x);
+        miny = min (miny, src[i].y);
+        maxx = max (maxx, src[i].x);
+        maxy = max (maxy, src[i].y);
+    }
+    int marginX = (maxx - minx) * 0.1;
+    int marginY = (maxy - miny) * 0.1;
+    minx -= marginX;
+    minx = max(0, minx);
+    miny -= marginY;
+    miny = max(0, miny);
+    maxx += marginX;
+    maxx = min(rawFrame.cols, maxx);
+    maxy += marginY;
+    maxy = min(rawFrame.rows, maxy);
+    rawFrame(Range(miny, maxy), Range(minx, maxx)).copyTo(origin);
+    cvtColor(origin, gray, CV_RGB2GRAY);
+    Canny (gray, edges, cannylow, cannyhigh, 3);		// Apply Canny edge detection on the gray image
+    origin.copyTo (deb);
+    findContours (edges, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
+    int contourID = findCandidates ();
+    approxPolyDP (Mat(contours[contourID]), res, arcLength (Mat(contours[contourID]), true) * 0.02, true);
+    for (int i = 0; i < contours.size(); ++i) {
+        drawContours (deb, contours, i, colors[i % 6], 2, 8, hierarchy, 0 );
+    }
+    for (int i = 0; i < res.size(); ++i) {
+        circle (deb, cvPoint ((res[i].x), (res[i].y)), 2 , Scalar(255,255,255), 2, 8, 0);
+        res[i].x += minx;
+        res[i].y += miny;
+    }
+    debs.push_back (deb);
+}
+
 Point2f findAwayFromLine (int x, Point2f A, Point2f B) {
     // Find a Point in FIP[x] that most away from line AB 
     Point2f res;
+    vector<Point> realFIP;
+    findRealContour(realFIP, FIP[x]);
     double maxP = 0;
-    for (int i = 0; i < FIP[x].size(); ++i) {
-        double tmp = distLine (FIP[x][i], A, B);
+    for (int i = 0; i < realFIP.size(); ++i) {
+        double tmp = distLine (realFIP[i], A, B);
         if (tmp > maxP) {
             maxP = tmp;
-            res = FIP[x][i];
+            res = realFIP[i];
         } 
     }
     return res;
@@ -145,12 +221,14 @@ Point2f findAwayFromLine (int x, Point2f A, Point2f B) {
 Point2f findAwayFromPoint (int x, Point2f P) {
     // Find a Point in FIP[x] that most away from point P
     Point2f res;
+    vector<Point> realFIP;
+    findRealContour(realFIP, FIP[x]);
     double maxP = 0;
-    for (int i = 0; i < FIP[x].size(); ++i) {
-        double tmp = dist (FIP[x][i], P);
+    for (int i = 0; i < realFIP.size(); ++i) {
+        double tmp = dist (realFIP[i], P);
         if (tmp > maxP) {
             maxP = tmp;
-            res = FIP[x][i];
+            res = realFIP[i];
         } 
     }
     return res;
@@ -206,7 +284,7 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
         M = getPerspectiveTransform (pts1, pts2);
         warpPerspective (rawFrame, firstImg, M, Size (qrsize, qrsize));
         // convert to binary image
-        cvtColor (firstImg, histImg,CV_RGB2GRAY);
+        cvtColor (firstImg, histImg, CV_RGB2GRAY);
         equalizeHist (histImg, gray);
         LocalPreWorkGray (gray);
         //    threshold (gray, bin, 180, 255, CV_THRESH_BINARY);
@@ -246,8 +324,8 @@ Point2f findN (Point2f P1, Point2f P2, Point2f P4, int top, int left, int right)
     equalizeHist (histImg, gray);
     LocalPreWorkGray (gray);
     //    threshold (gray, bin, 180, 255, CV_THRESH_BINARY);
-    equalizeHist (gray, deb);
-    bin.copyTo (deb);
+    //equalizeHist (gray, deb);
+    //bin.copyTo (deb);
     LocalThBinarization (gray, bin);
 
     //imshow ("bin", bin);
@@ -347,8 +425,8 @@ void findQR (Mat &qr, bool &flag) {
                 Mat M = getPerspectiveTransform (pts1,pts2);
                 warpPerspective (rawFrame, raw, M, Size (qr.cols,qr.rows));
                 copyMakeBorder (raw, qr, 10, 10, 10, 10, BORDER_CONSTANT, Scalar(255,255,255));
-                cvtColor (qr, tmpMat, CV_RGB2GRAY);
-                equalizeHist (tmpMat, deb);
+//                cvtColor (qr, tmpMat, CV_RGB2GRAY);
+//                equalizeHist (tmpMat, deb);
 
                 polylines (frame, FIP[top], true, Scalar (255, 0, 0), 2, 8, 0);
                 polylines (frame, FIP[left], true, Scalar (0, 255, 0), 2, 8, 0);
@@ -677,8 +755,6 @@ int main(int argc, const char *argv[]) {
     if (parameter_init (argc, argv)) return 0;
 
 
-    deb = Mat::zeros(qrsize, qrsize, CV_8UC1);
-    tmpMat = Mat::zeros(qrsize, qrsize, CV_8UC1);
     Mat gray(frame.size(), CV_MAKETYPE(frame.depth(), 1));
     Mat tmp(frame.size(), CV_MAKETYPE(frame.depth(), 1));
     Mat marked(frame.size(), CV_MAKETYPE(frame.depth(), 1));
@@ -691,6 +767,7 @@ int main(int argc, const char *argv[]) {
         string filename;
         cin >> filename;
         for (; filename != "q"; cin >> filename) {
+            debs.clear();
             cout << filename << endl;
             frame = imread ("../data/" + filename);
             candidates.clear (); FIP.clear ();
@@ -731,6 +808,8 @@ int main(int argc, const char *argv[]) {
             if (flag) imshow ("QR", qr);
             imshow ("Image", frame);
             imshow ("Bin", bin);
+            for (int i = 0; i < debs.size(); ++i)
+                imshow ("Debug" + to_string(i), debs[i]);
 
             cout << "Press any key to continue." << endl;
             pause;
@@ -745,6 +824,7 @@ int main(int argc, const char *argv[]) {
         cout << "Press any key to return." << endl;
 
         for (int key = -1; !~key; capture >> frame) {
+            debs.clear();
             candidates.clear (); FIP.clear ();
             memset (v, 0, sizeof (v));
             memset (vhull, 0, sizeof (vhull));
@@ -781,8 +861,8 @@ int main(int argc, const char *argv[]) {
             if (flag) imshow ("QR", qr);
             imshow ("Image", frame);
             imshow ("Bin", bin);
-            imshow ("Debug", deb);
-            imshow ("tmpDebug", tmpMat);
+            for (int i = 0; i < debs.size(); ++i)
+                imshow ("Debug" + to_string(i), debs[i]);
 
             key = waitKey (100);
         }

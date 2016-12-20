@@ -162,6 +162,8 @@ int findCandidates () {
 }
 
 void findRealContour (vector<Point> &res, vector<Point> &src) {
+    res = src;
+    return;
     Mat origin, gray, edges, deb, detected_edges;
     int minx, miny, maxx, maxy;
     minx = miny = INF;
@@ -400,7 +402,10 @@ void findQR (Mat &qr, bool &flag) {
                             contourArea (FIP[C]))
                    )
                     continue;
-                if (dist_constraint (AB, BC, CA, sqrt (contourArea(FIP[A]) + contourArea(FIP[B]) + contourArea(FIP[C])) / 3)) 
+                if (dist_constraint (AB, BC, CA, 
+                            sqrt ((contourArea(FIP[A]) +
+                                    contourArea(FIP[B]) +
+                                    contourArea(FIP[C])) / 3)))
                     continue;
                 vector<int> tmp = getPoint (AB, BC, CA, A, B, C);
                 int top = tmp[0]; int left = tmp[1]; int right = tmp[2];
